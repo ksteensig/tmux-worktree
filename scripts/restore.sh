@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# tmux-worktree restore: re-create opencode + neovim sessions/windows
-# from the persisted state file. Run this after a reboot.
+# tmux-worktree restore: re-create sessions from the persisted state file.
+# Each worktree gets its own session with 3 windows: opencode, neovim, zsh.
+# Run this after a reboot.
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -19,19 +20,22 @@ STATE_FILE="$STATE_DIR/worktrees.tsv"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-ensure_session() {
-  local session="$1" window="$2" dir="$3" cmd="$4"
-  if tmux has-session -t "$session" 2>/dev/null; then
-    tmux new-window -t "$session" -n "$window" -c "$dir" "$cmd"
-  else
-    tmux new-session -d -s "$session" -n "$window" -c "$dir" "$cmd"
-  fi
-  local win_idx
-  win_idx=$(tmux list-windows -t "$session" -F '#{window_index}:#{window_name}' 2>/dev/null \
-    | grep -F ":${window}" | head -1 | cut -d: -f1) || true
-  if [ -n "$win_idx" ]; then
-    tmux set-option -t "${session}:${win_idx}" automatic-rename off 2>/dev/null || true
-  fi
+create_session() {
+  local session_name="$1" dir="$2"
+  # Create session with first window: opencode
+  tmux new-session -d -s "$session_name" -n "opencode" -c "$dir" "$OPENCODE_BIN"
+  tmux set-option -t "=${session_name}:opencode" automatic-rename off 2>/dev/null || true
+
+  # Second window: neovim
+  tmux new-window -t "=$session_name" -n "neovim" -c "$dir" "$NVIM_BIN"
+  tmux set-option -t "=${session_name}:neovim" automatic-rename off 2>/dev/null || true
+
+  # Third window: zsh
+  tmux new-window -t "=$session_name" -n "zsh" -c "$dir"
+  tmux set-option -t "=${session_name}:zsh" automatic-rename off 2>/dev/null || true
+
+  # Select the opencode window by default.
+  tmux select-window -t "=${session_name}:opencode"
 }
 
 # ---------------------------------------------------------------------------
@@ -51,20 +55,16 @@ while IFS=$'\t' read -r repo_path branch safe_branch worktree_path; do
     continue
   fi
 
-  # Build window name (same logic as worktree.sh).
+  # Build session name (same logic as worktree.sh).
   repo=$(basename "$repo_path")
-  window_name="${repo}:${safe_branch}"
+  session_name="${repo}:${safe_branch}"
 
-  # Skip if the window already exists in the session.
-  if tmux has-session -t "opencode" 2>/dev/null; then
-    existing=$(tmux list-windows -t "opencode" -F '#{window_name}' 2>/dev/null | grep -xF "$window_name" || true)
-    if [ -n "$existing" ]; then
-      continue
-    fi
+  # Skip if the session already exists.
+  if tmux has-session -t "=$session_name" 2>/dev/null; then
+    continue
   fi
 
-  ensure_session "opencode" "$window_name" "$worktree_path" "$OPENCODE_BIN"
-  ensure_session "neovim"   "$window_name" "$worktree_path" "$NVIM_BIN"
+  create_session "$session_name" "$worktree_path"
   count=$((count + 1))
 
 done < "$STATE_FILE"

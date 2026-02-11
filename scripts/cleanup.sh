@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# tmux-worktree cleanup: pick a worktree to tear down.
-# Kills matching windows in both "opencode" and "neovim" sessions,
+# tmux-worktree cleanup: pick a worktree session to tear down.
+# Kills the entire session (opencode + neovim + zsh windows),
 # optionally removes the git worktree, and removes the state entry.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,32 +21,38 @@ fi
 
 STATE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tmux-worktree"
 STATE_FILE="$STATE_DIR/worktrees.tsv"
+STATUS_DIR="$STATE_DIR/status"
 
 die() { printf 'tmux-worktree: %s\n' "$*" >&2; exit 1; }
 
 [ -z "$FZF_BIN" ] || [ ! -x "$FZF_BIN" ] && die "fzf not found"
 
 # ---------------------------------------------------------------------------
-# Step 1: Build list from actual tmux windows (not just state file)
+# Step 1: Build list of worktree sessions
 # ---------------------------------------------------------------------------
+# Worktree sessions are named "repo:branch". List all sessions that contain
+# a colon (to exclude non-worktree sessions).
 entries=""
-declare -A seen=()
+while IFS=$'\t' read -r session_name; do
+  [ -z "$session_name" ] && continue
+  # Only include sessions that look like worktree sessions (contain a colon).
+  [[ "$session_name" != *:* ]] && continue
 
-# Scan opencode session windows.
-while IFS=$'\t' read -r idx wname pane_path; do
-  [ -z "$wname" ] && continue
-  # Skip duplicates.
-  [ -n "${seen[$wname]:-}" ] && continue
-  seen["$wname"]=1
+  # Get the pane path from the opencode window to determine status.
+  pane_path=$(tmux display-message -t "=${session_name}:opencode" -p '#{pane_current_path}' 2>/dev/null || true)
 
   # Get status indicator.
-  st=$("$STATUS_SCRIPT" --raw "$pane_path" 2>/dev/null || true)
+  st=""
+  if [ -n "$pane_path" ]; then
+    st=$("$STATUS_SCRIPT" --raw "$pane_path" 2>/dev/null || true)
+  fi
+
   case "$st" in
-    idle)       line=$(printf '%s  \033[32m● idle\033[0m' "$wname") ;;
-    busy)       line=$(printf '%s  \033[33m● busy\033[0m' "$wname") ;;
-    error)      line=$(printf '%s  \033[31m● error\033[0m' "$wname") ;;
-    permission) line=$(printf '%s  \033[34m● permission\033[0m' "$wname") ;;
-    *)          line=$(printf '%s  \033[90m○ stopped\033[0m' "$wname") ;;
+    idle)       line=$(printf '%s  \033[32m● idle\033[0m' "$session_name") ;;
+    busy)       line=$(printf '%s  \033[33m● busy\033[0m' "$session_name") ;;
+    error)      line=$(printf '%s  \033[31m● error\033[0m' "$session_name") ;;
+    permission) line=$(printf '%s  \033[34m● permission\033[0m' "$session_name") ;;
+    *)          line=$(printf '%s  \033[90m○ stopped\033[0m' "$session_name") ;;
   esac
 
   if [ -z "$entries" ]; then
@@ -54,16 +60,16 @@ while IFS=$'\t' read -r idx wname pane_path; do
   else
     entries="$entries"$'\n'"$line"
   fi
-done < <(tmux list-windows -t opencode -F '#{window_index}	#{window_name}	#{pane_current_path}' 2>/dev/null || true)
+done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)
 
-[ -z "$entries" ] && die "No active worktrees"
+[ -z "$entries" ] && die "No active worktree sessions"
 
 # ---------------------------------------------------------------------------
-# Step 2: Pick which worktree(s) to remove
+# Step 2: Pick which session(s) to remove
 # ---------------------------------------------------------------------------
 selected=$(printf '%b\n' "$entries" | "$FZF_BIN" \
   --prompt="remove > " \
-  --header="Select worktree to close (opencode + neovim windows)" \
+  --header="Select worktree session to close" \
   --reverse \
   --ansi \
   --multi) || exit 0
@@ -77,9 +83,9 @@ clean_selected=$(printf '%s\n' "$selected" | sed 's/  [●○] [a-z]*$//')
 # Step 3: Also delete git worktree?
 # ---------------------------------------------------------------------------
 delete_worktree=false
-wt_choice=$(printf '%s\n' "Keep git worktree (close windows only)" "Also delete git worktree" "Cancel" | "$FZF_BIN" \
+wt_choice=$(printf '%s\n' "Keep git worktree (close session only)" "Also delete git worktree" "Cancel" | "$FZF_BIN" \
   --prompt="option > " \
-  --header="Close opencode + neovim windows. Delete the git worktree too?" \
+  --header="Close session. Delete the git worktree too?" \
   --reverse --no-multi) || exit 0
 
 case "$wt_choice" in
@@ -89,37 +95,20 @@ case "$wt_choice" in
 esac
 
 # ---------------------------------------------------------------------------
-# Step 4: For each selected entry, tear down
+# Step 4: For each selected session, tear down
 # ---------------------------------------------------------------------------
-while IFS= read -r window_name; do
-  [ -z "$window_name" ] && continue
+while IFS= read -r session_name; do
+  [ -z "$session_name" ] && continue
 
-  # Kill windows in both sessions.
-  # Match exact name OR truncated names (ending with ...).
-  for session in opencode neovim; do
-    win_target=""
-    while IFS=$'\t' read -r idx wname; do
-      if [ "$wname" = "$window_name" ]; then
-        win_target="$idx"
-        break
-      fi
-      truncated="${wname%...}"
-      if [ "$truncated" != "$wname" ] && [ "${window_name#"$truncated"}" != "$window_name" ]; then
-        win_target="$idx"
-        break
-      fi
-    done < <(tmux list-windows -t "$session" -F $'#{window_index}\t#{window_name}' 2>/dev/null || true)
-    if [ -n "$win_target" ]; then
-      tmux kill-window -t "${session}:${win_target}" 2>/dev/null || true
-    fi
-  done
+  # Kill the entire session.
+  tmux kill-session -t "=$session_name" 2>/dev/null || true
 
   # Remove git worktree if requested. Find worktree path from state file.
   if [ "$delete_worktree" = true ] && [ -f "$STATE_FILE" ]; then
-    match=$(awk -F'\t' -v wn="$window_name" '{
+    match=$(awk -F'\t' -v sn="$session_name" '{
       repo = $1; sub(/.*\//, "", repo)
       key = repo ":" $3
-      if (key == wn) print
+      if (key == sn) print
     }' "$STATE_FILE" | head -1) || true
 
     if [ -n "$match" ]; then
@@ -133,25 +122,29 @@ while IFS= read -r window_name; do
 
   # Remove from state file if present.
   if [ -f "$STATE_FILE" ]; then
-    awk -F'\t' -v wn="$window_name" '{
+    awk -F'\t' -v sn="$session_name" '{
       repo = $1; sub(/.*\//, "", repo)
       key = repo ":" $3
-      if (key != wn) print
+      if (key != sn) print
     }' "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null || true
     mv "$STATE_FILE.tmp" "$STATE_FILE"
   fi
 
-done <<< "$clean_selected"
-
-# Clean up empty sessions.
-for session in opencode neovim; do
-  if tmux has-session -t "$session" 2>/dev/null; then
-    window_count=$(tmux list-windows -t "$session" 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$window_count" -eq 0 ]; then
-      tmux kill-session -t "$session" 2>/dev/null || true
-    fi
+  # Clean up status file for this worktree.
+  if [ -f "$STATE_FILE" ] || [ "$delete_worktree" = true ]; then
+    # Try to find the worktree path to clean up status file.
+    # The session name is "repo:safe_branch", worktree path is BASE_DIR/repo/safe_branch.
+    repo_part="${session_name%%:*}"
+    branch_part="${session_name#*:}"
+    BASE_DIR=$(tmux show-option -gqv @worktree-base-dir 2>/dev/null || true)
+    BASE_DIR="${BASE_DIR:-$HOME/Workspace}"
+    wt_dir="$BASE_DIR/$repo_part/$branch_part"
+    hash=$(printf '%s' "$wt_dir" | md5 -q 2>/dev/null || printf '%s' "$wt_dir" | md5sum 2>/dev/null | cut -d' ' -f1)
+    hash="${hash:0:12}"
+    rm -f "$STATUS_DIR/$hash" 2>/dev/null || true
   fi
-done
+
+done <<< "$clean_selected"
 
 # Clean up empty state file.
 if [ -f "$STATE_FILE" ] && [ ! -s "$STATE_FILE" ]; then
