@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # tmux-worktree session switcher: pick a worktree session to switch to.
-# Lists all worktree sessions (named "repo:branch") with status indicators.
+# Lists all worktree sessions (named "repo/branch") with status indicators.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATUS_SCRIPT="$SCRIPT_DIR/status.sh"
@@ -22,8 +22,8 @@ current_session=$(tmux display-message -p '#{session_name}')
 entries=""
 while IFS=$'\t' read -r session_name; do
   [ -z "$session_name" ] && continue
-  # Only include sessions that look like worktree sessions (contain a colon).
-  [[ "$session_name" != *:* ]] && continue
+  # Only include sessions that look like worktree sessions (contain a slash).
+  [[ "$session_name" != */* ]] && continue
 
   # Get the pane path from the opencode window to determine status.
   pane_path=$(tmux display-message -t "=${session_name}:opencode" -p '#{pane_current_path}' 2>/dev/null || true)

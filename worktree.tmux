@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tmux-worktree — TPM plugin entry point
-# Each worktree gets its own tmux session with 3 windows: opencode, neovim, zsh.
+# Each worktree gets its own tmux session (repo/branch) with 3 windows: opencode, neovim, zsh.
 #
 # Keybindings:
 #   prefix + W — create/open a worktree session

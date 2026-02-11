@@ -30,13 +30,13 @@ die() { printf 'tmux-worktree: %s\n' "$*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 # Step 1: Build list of worktree sessions
 # ---------------------------------------------------------------------------
-# Worktree sessions are named "repo:branch". List all sessions that contain
-# a colon (to exclude non-worktree sessions).
+# Worktree sessions are named "repo/branch". List all sessions that contain
+# a slash (to exclude non-worktree sessions).
 entries=""
 while IFS=$'\t' read -r session_name; do
   [ -z "$session_name" ] && continue
-  # Only include sessions that look like worktree sessions (contain a colon).
-  [[ "$session_name" != *:* ]] && continue
+  # Only include sessions that look like worktree sessions (contain a slash).
+  [[ "$session_name" != */* ]] && continue
 
   # Get the pane path from the opencode window to determine status.
   pane_path=$(tmux display-message -t "=${session_name}:opencode" -p '#{pane_current_path}' 2>/dev/null || true)
@@ -107,7 +107,7 @@ while IFS= read -r session_name; do
   if [ "$delete_worktree" = true ] && [ -f "$STATE_FILE" ]; then
     match=$(awk -F'\t' -v sn="$session_name" '{
       repo = $1; sub(/.*\//, "", repo)
-      key = repo ":" $3
+      key = repo "/" $3
       if (key == sn) print
     }' "$STATE_FILE" | head -1) || true
 
@@ -124,7 +124,7 @@ while IFS= read -r session_name; do
   if [ -f "$STATE_FILE" ]; then
     awk -F'\t' -v sn="$session_name" '{
       repo = $1; sub(/.*\//, "", repo)
-      key = repo ":" $3
+      key = repo "/" $3
       if (key != sn) print
     }' "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null || true
     mv "$STATE_FILE.tmp" "$STATE_FILE"
@@ -133,9 +133,9 @@ while IFS= read -r session_name; do
   # Clean up status file for this worktree.
   if [ -f "$STATE_FILE" ] || [ "$delete_worktree" = true ]; then
     # Try to find the worktree path to clean up status file.
-    # The session name is "repo:safe_branch", worktree path is BASE_DIR/repo/safe_branch.
-    repo_part="${session_name%%:*}"
-    branch_part="${session_name#*:}"
+    # The session name is "repo/safe_branch", worktree path is BASE_DIR/repo/safe_branch.
+    repo_part="${session_name%%/*}"
+    branch_part="${session_name#*/}"
     BASE_DIR=$(tmux show-option -gqv @worktree-base-dir 2>/dev/null || true)
     BASE_DIR="${BASE_DIR:-$HOME/Workspace}"
     wt_dir="$BASE_DIR/$repo_part/$branch_part"

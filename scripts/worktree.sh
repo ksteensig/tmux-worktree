@@ -171,7 +171,7 @@ fi
 # ---------------------------------------------------------------------------
 # Step 4: Create or switch to session
 # ---------------------------------------------------------------------------
-session_name="${repo}:${safe_branch}"
+session_name="${repo}/${safe_branch}"
 
 if tmux has-session -t "=$session_name" 2>/dev/null; then
   # Session already exists, just switch to it.

@@ -57,7 +57,7 @@ while IFS=$'\t' read -r repo_path branch safe_branch worktree_path; do
 
   # Build session name (same logic as worktree.sh).
   repo=$(basename "$repo_path")
-  session_name="${repo}:${safe_branch}"
+  session_name="${repo}/${safe_branch}"
 
   # Skip if the session already exists.
   if tmux has-session -t "=$session_name" 2>/dev/null; then
