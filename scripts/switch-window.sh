@@ -60,12 +60,23 @@ done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)
 
 legend=$(printf '\033[32m● idle\033[0m  \033[33m● busy\033[0m  \033[31m● error\033[0m  \033[34m● permission\033[0m  \033[90m○ stopped\033[0m')
 
+# Preview: capture the opencode window pane, fall back to the first window.
+# Tail to $FZF_PREVIEW_LINES so the most recent output is visible at the bottom.
+preview_cmd='
+  session=$(echo {} | sed "s/^[●○] //;s/  (attached)$//")
+  { tmux capture-pane -t "=${session}:opencode" -e -p 2>/dev/null \
+    || tmux capture-pane -t "=${session}:{start}" -e -p 2>/dev/null; } \
+    | tail -n "${FZF_PREVIEW_LINES:-50}"
+'
+
 selected=$(printf '%b\n' "$legend" "$entries" | "$FZF_BIN" \
   --prompt="session > " \
   --header="Switch to worktree session" \
   --header-lines=1 \
   --reverse \
-  --ansi) || exit 0
+  --ansi \
+  --preview "$preview_cmd" \
+  --preview-window=right:60%) || exit 0
 
 [ -z "$selected" ] && exit 0
 
