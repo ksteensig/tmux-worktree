@@ -63,7 +63,7 @@ if [ -n "$KUBECTL_BIN" ] && [ -x "$KUBECTL_BIN" ]; then
 
   # Apply filter if configured.
   if [ -n "$K8S_POD_FILTER" ] && [ -n "$pod_list" ]; then
-    pod_list=$(printf '%s\n' "$pod_list" | grep "$K8S_POD_FILTER" || true)
+    pod_list=$(printf '%s\n' "$pod_list" | grep -E "$K8S_POD_FILTER" || true)
   fi
 
   while IFS= read -r pod; do
