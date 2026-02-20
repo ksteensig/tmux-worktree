@@ -40,14 +40,22 @@ function sessionLabel(directory: string): string {
   return parent && parent !== "." ? `${parent}/${name}` : name
 }
 
-function notify(title: string, message: string) {
+// macOS system sounds used per event type.
+const SOUNDS = {
+  permission: "/System/Library/Sounds/Funk.aiff",
+  done: "/System/Library/Sounds/Glass.aiff",
+  error: "/System/Library/Sounds/Sosumi.aiff",
+} as const
+
+function notify(title: string, message: string, sound: keyof typeof SOUNDS) {
   try {
     execFile("osascript", [
       "-e",
       `display notification "${message}" with title "${title}"`,
     ])
+    execFile("afplay", [SOUNDS[sound]])
   } catch {
-    // ignore — not on macOS or osascript unavailable
+    // ignore — not on macOS or osascript/afplay unavailable
   }
 }
 
@@ -98,20 +106,20 @@ export const TmuxStatus: Plugin = async ({ directory, worktree }) => {
           idleSince = Date.now()
           writeStatus(dir, "idle")
           if (previousStatus === "busy") {
-            notify("OpenCode — Done", `${label} is waiting for input`)
+            notify("OpenCode — Done", `${label} is waiting for input`, "done")
           }
           previousStatus = "idle"
           break
         case "session.error":
           idleSince = Date.now()
           writeStatus(dir, "error")
-          notify("OpenCode — Error", `${label} encountered an error`)
+          notify("OpenCode — Error", `${label} encountered an error`, "error")
           previousStatus = "error"
           break
         case "permission.asked":
           idleSince = Date.now()
           writeStatus(dir, "permission")
-          notify("OpenCode — Permission", `${label} needs approval`)
+          notify("OpenCode — Permission", `${label} needs approval`, "permission")
           previousStatus = "permission"
           break
         case "permission.replied":
