@@ -19,7 +19,7 @@ declare -A prev_status
 send_notification() {
   local title="$1" message="$2" sound="$3"
   osascript -e "display notification \"$message\" with title \"$title\"" 2>/dev/null &
-  afplay "$sound" 2>/dev/null &
+  afplay "$sound" 2>/dev/null
 }
 
 # Resolve a status file hash back to a session name by checking active sessions.
