@@ -63,6 +63,12 @@ export const TmuxStatus: Plugin = async ({ directory, worktree }) => {
   // Track previous status so we only notify on transitions.
   let previousStatus = "idle"
 
+  // When session.idle fires, late message events can still trickle in and
+  // overwrite the idle status with "busy". We record when idle was set and
+  // suppress message-driven busy writes for a grace period after that.
+  let idleSince = Date.now()
+  const IDLE_GRACE_MS = 2000
+
   // Set initial status.
   writeStatus(dir, "idle")
 
@@ -78,6 +84,9 @@ export const TmuxStatus: Plugin = async ({ directory, worktree }) => {
         case "message.part.updated":
         case "message.updated": {
           const now = Date.now()
+          // Suppress stale message events that trickle in right after
+          // session.idle — they are leftovers from the previous turn.
+          if (now - idleSince < IDLE_GRACE_MS) break
           if (now - lastBusyWrite > DEBOUNCE_MS) {
             lastBusyWrite = now
             writeStatus(dir, "busy")
@@ -86,6 +95,7 @@ export const TmuxStatus: Plugin = async ({ directory, worktree }) => {
           break
         }
         case "session.idle":
+          idleSince = Date.now()
           writeStatus(dir, "idle")
           if (previousStatus === "busy") {
             notify("OpenCode — Done", `${label} is waiting for input`)
@@ -93,16 +103,19 @@ export const TmuxStatus: Plugin = async ({ directory, worktree }) => {
           previousStatus = "idle"
           break
         case "session.error":
+          idleSince = Date.now()
           writeStatus(dir, "error")
           notify("OpenCode — Error", `${label} encountered an error`)
           previousStatus = "error"
           break
         case "permission.asked":
+          idleSince = Date.now()
           writeStatus(dir, "permission")
           notify("OpenCode — Permission", `${label} needs approval`)
           previousStatus = "permission"
           break
         case "permission.replied":
+          idleSince = 0
           writeStatus(dir, "busy")
           previousStatus = "busy"
           break
