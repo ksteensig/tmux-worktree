@@ -149,6 +149,20 @@ To show the OpenCode status in your tmux status bar, add a custom variable. For 
 
 Then add `#{opencode_status}` to your `tmux_conf_theme_status_right`.
 
+### macOS notifications
+
+On macOS, the status plugin automatically sends native system notifications when an OpenCode instance needs your attention. No extra configuration is required — notifications are delivered via `osascript` and work out of the box.
+
+| Notification | When it fires |
+|--------------|---------------|
+| **OpenCode — Permission** | An instance is waiting for you to approve a tool call |
+| **OpenCode — Done** | The model finished working and is waiting for input |
+| **OpenCode — Error** | An instance encountered an error |
+
+Notifications include the session name (e.g. `myrepo/my-branch`) so you know which worktree needs attention. They only fire on state transitions — for example, "Done" only appears when the model goes from actively working to idle, not on repeated idle events.
+
+On non-macOS systems, notifications are silently skipped.
+
 ## Configuration
 
 All options are set via tmux global options. Defaults work out of the box.

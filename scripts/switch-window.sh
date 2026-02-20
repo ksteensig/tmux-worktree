@@ -54,7 +54,7 @@ while IFS=$'\t' read -r session_name; do
   else
     entries="$entries"$'\n'"$line"
   fi
-done < <(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)
+done < <(tmux list-sessions -F '#{session_activity} #{session_name}' 2>/dev/null | sort -rn | sed 's/^[0-9]* //' || true)
 
 [ -z "$entries" ] && exit 0
 
