@@ -36,6 +36,11 @@ key_switch="${key_switch:-S}"
 key_workspace=$(tmux show-option -gqv @worktree-workspace-key)
 key_workspace="${key_workspace:-G}"
 
+# Start notification daemon (macOS only) if not already running.
+if command -v osascript &>/dev/null && ! pgrep -f "tmux-worktree.*notify\.sh" &>/dev/null; then
+  nohup "$CURRENT_DIR/scripts/notify.sh" >/dev/null 2>&1 &
+fi
+
 tmux bind-key "$key_create"    display-popup -E -w 80% -h 80% "$CURRENT_DIR/scripts/worktree.sh"
 tmux bind-key "$key_cleanup"   display-popup -E -w 80% -h 80% "$CURRENT_DIR/scripts/cleanup.sh"
 tmux bind-key "$key_restore"   run-shell "$CURRENT_DIR/scripts/restore.sh"

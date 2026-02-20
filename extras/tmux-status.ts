@@ -1,8 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { execFile } from "child_process"
 import { mkdirSync, writeFileSync, unlinkSync } from "fs"
 import { createHash } from "crypto"
-import { join, basename } from "path"
+import { join } from "path"
 
 const STATUS_DIR = join(
   process.env.XDG_DATA_HOME || join(process.env.HOME!, ".local", "share"),
@@ -32,44 +31,13 @@ function removeStatus(directory: string) {
   }
 }
 
-// Derive a human-readable session label from the worktree path.
-// e.g. "/Users/kasper/Workspace/myrepo/my-branch" → "myrepo/my-branch"
-function sessionLabel(directory: string): string {
-  const parent = basename(join(directory, ".."))
-  const name = basename(directory)
-  return parent && parent !== "." ? `${parent}/${name}` : name
-}
-
-// macOS system sounds used per event type.
-const SOUNDS = {
-  permission: "/System/Library/Sounds/Funk.aiff",
-  done: "/System/Library/Sounds/Glass.aiff",
-  error: "/System/Library/Sounds/Sosumi.aiff",
-} as const
-
-function notify(title: string, message: string, sound: keyof typeof SOUNDS) {
-  try {
-    execFile("osascript", [
-      "-e",
-      `display notification "${message}" with title "${title}"`,
-    ])
-    execFile("afplay", [SOUNDS[sound]])
-  } catch {
-    // ignore — not on macOS or osascript/afplay unavailable
-  }
-}
-
 export const TmuxStatus: Plugin = async ({ directory, worktree }) => {
   // Use worktree path if available (matches tmux pane_current_path), fall back to directory.
   const dir = worktree || directory
-  const label = sessionLabel(dir)
 
   // Track last time we wrote "busy" to avoid spamming the filesystem.
   let lastBusyWrite = 0
   const DEBOUNCE_MS = 300
-
-  // Track previous status so we only notify on transitions.
-  let previousStatus = "idle"
 
   // When session.idle fires, late message events can still trickle in and
   // overwrite the idle status with "busy". We record when idle was set and
@@ -98,34 +66,24 @@ export const TmuxStatus: Plugin = async ({ directory, worktree }) => {
           if (now - lastBusyWrite > DEBOUNCE_MS) {
             lastBusyWrite = now
             writeStatus(dir, "busy")
-            previousStatus = "busy"
           }
           break
         }
         case "session.idle":
           idleSince = Date.now()
           writeStatus(dir, "idle")
-          if (previousStatus === "busy") {
-            notify("OpenCode — Done", `${label} is waiting for input`, "done")
-          }
-          previousStatus = "idle"
           break
         case "session.error":
           idleSince = Date.now()
           writeStatus(dir, "error")
-          notify("OpenCode — Error", `${label} encountered an error`, "error")
-          previousStatus = "error"
           break
         case "permission.asked":
           idleSince = Date.now()
           writeStatus(dir, "permission")
-          notify("OpenCode — Permission", `${label} needs approval`, "permission")
-          previousStatus = "permission"
           break
         case "permission.replied":
           idleSince = 0
           writeStatus(dir, "busy")
-          previousStatus = "busy"
           break
       }
     },
